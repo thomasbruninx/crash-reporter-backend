@@ -1,0 +1,10 @@
+.git
+.gitignore
+.venv
+.pytest_cache
+__pycache__
+*.pyc
+crash_reporter.db
+crash_reporter_backend.egg-info
+tests
+openapi
