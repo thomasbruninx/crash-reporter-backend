@@ -10,7 +10,7 @@ from app.models.user import User
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Create bootstrap admin user")
+    parser = argparse.ArgumentParser(description="Create user")
     parser.add_argument("--username", required=True)
     parser.add_argument("--password", required=True)
     args = parser.parse_args()
