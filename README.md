@@ -27,7 +27,7 @@ docker build -t crash-reporter-backend .
 
 Run this command from the project root to create a user:
 ```bash
-python scripts/create_admin.py --username admin --password mysecretpassword
+python scripts/create_user.py --username admin --password mysecretpassword
 ```
 
 ## API Endpoints
@@ -57,8 +57,8 @@ python scripts/create_admin.py --username admin --password mysecretpassword
 - `POST /api/v1/login`: Authenticate a user and obtain a JWT token
 - `POST /api/v1/user`: Create a new user
 
-## Client libraries and OpenAPI specification
+## Client, SDK, and OpenAPI specification
 
-Client libraries for various programming languages are available in separate repositories. 
+A Go library is available in the `crash-reporter-go` repository. A reference client implementation is available in the `crash-reporter-client` repository.
 
 You can also use the OpenAPI specification to generate client code for your preferred language or framework. The OpenAPI spec is available at `/openapi.json` when the backend server is running.
