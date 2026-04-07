@@ -15,7 +15,7 @@ from app.core.security import (
     verify_password,
     get_current_claims,
 )
-from app.core.metadata_validation import validate_metadata_for_mongo
+from app.core.metadata_validation import normalize_metadata_for_mongo
 from app.db.sql import get_db
 from app.documents.report import ReportDocument
 from app.models.instance import Instance
@@ -229,7 +229,7 @@ async def create_report(payload: ReportCreate, db: Session = Depends(get_db), cl
     if not isinstance(payload.metadata, dict):
         raise HTTPException(status_code=422, detail="metadata must be an object")
     try:
-        validate_metadata_for_mongo(payload.metadata)
+        normalized_metadata = normalize_metadata_for_mongo(payload.metadata)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -245,7 +245,7 @@ async def create_report(payload: ReportCreate, db: Session = Depends(get_db), cl
         project_uuid=inst.project_uuid,
         instance_uuid=payload.instance_uuid,
         severity=payload.severity,
-        metadata=payload.metadata,
+        metadata=normalized_metadata,
         timestamp=datetime.now(tz=timezone.utc),
     )
     await report.insert()
@@ -339,10 +339,10 @@ async def update_report(uuid: str, payload: ReportUpdate, _: dict = Depends(requ
     if not report:
         raise HTTPException(status_code=404, detail="Not found")
     try:
-        validate_metadata_for_mongo(payload.metadata)
+        normalized_metadata = normalize_metadata_for_mongo(payload.metadata)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    report.metadata = payload.metadata
+    report.metadata = normalized_metadata
     await report.save()
     return ReportOut(
         uuid=report.uuid,

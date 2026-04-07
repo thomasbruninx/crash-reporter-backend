@@ -2,28 +2,28 @@ INT64_MIN = -(2**63)
 INT64_MAX = 2**63 - 1
 
 
-def validate_metadata_for_mongo(metadata: dict[str, object]) -> None:
-    _validate_value(value=metadata, path="metadata")
+def normalize_metadata_for_mongo(metadata: dict[str, object]) -> dict[str, object]:
+    return _normalize_value(value=metadata, path="metadata")
 
 
-def _validate_value(value: object, path: str) -> None:
+def _normalize_value(value: object, path: str) -> object:
     if isinstance(value, dict):
+        normalized: dict[str, object] = {}
         for key, nested_value in value.items():
             if not isinstance(key, str):
                 raise ValueError(f"{path} has a non-string key")
-            _validate_value(value=nested_value, path=f"{path}.{key}")
-        return
+            normalized[key] = _normalize_value(value=nested_value, path=f"{path}.{key}")
+        return normalized
 
     if isinstance(value, list):
-        for index, nested_value in enumerate(value):
-            _validate_value(value=nested_value, path=f"{path}[{index}]")
-        return
+        return [_normalize_value(value=nested_value, path=f"{path}[{index}]") for index, nested_value in enumerate(value)]
 
     if isinstance(value, bool):
-        return
+        return value
 
     if isinstance(value, int):
         if value < INT64_MIN or value > INT64_MAX:
-            raise ValueError(f"{path} contains an integer outside MongoDB int64 range")
-        return
+            return str(value)
+        return value
 
+    return value
