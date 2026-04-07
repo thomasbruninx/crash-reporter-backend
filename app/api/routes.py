@@ -15,6 +15,7 @@ from app.core.security import (
     verify_password,
     get_current_claims,
 )
+from app.core.metadata_validation import validate_metadata_for_mongo
 from app.db.sql import get_db
 from app.documents.report import ReportDocument
 from app.models.instance import Instance
@@ -227,6 +228,10 @@ async def delete_instance(uuid: str, db: Session = Depends(get_db), _: dict = De
 async def create_report(payload: ReportCreate, db: Session = Depends(get_db), claims: dict = Depends(require_scope("report.create"))):
     if not isinstance(payload.metadata, dict):
         raise HTTPException(status_code=422, detail="metadata must be an object")
+    try:
+        validate_metadata_for_mongo(payload.metadata)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     inst = db.execute(select(Instance).where(Instance.uuid == payload.instance_uuid)).scalar_one_or_none()
     if not inst:
@@ -333,6 +338,10 @@ async def update_report(uuid: str, payload: ReportUpdate, _: dict = Depends(requ
     report = await ReportDocument.find_one(ReportDocument.uuid == uuid)
     if not report:
         raise HTTPException(status_code=404, detail="Not found")
+    try:
+        validate_metadata_for_mongo(payload.metadata)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     report.metadata = payload.metadata
     await report.save()
     return ReportOut(
