@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import inspect
 from typing import Annotated
 from uuid import uuid4
 
@@ -89,7 +90,17 @@ async def project_stats_map(db: Session, project_uuids: list[str]) -> dict[str, 
             }
         },
     ]
-    report_rows = await collection.aggregate(pipeline).to_list(None)
+    aggregate_result = collection.aggregate(pipeline)
+    if inspect.isawaitable(aggregate_result):
+        aggregate_result = await aggregate_result
+
+    if hasattr(aggregate_result, "to_list"):
+        try:
+            report_rows = await aggregate_result.to_list(None)
+        except TypeError:
+            report_rows = await aggregate_result.to_list(length=None)
+    else:
+        report_rows = [row async for row in aggregate_result]
     for row in report_rows:
         project_uuid = row["_id"]
         if project_uuid not in stats:
