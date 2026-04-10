@@ -15,10 +15,18 @@ class ProjectUpdate(BaseModel):
     name: str | None = None
 
 
+class ProjectStats(BaseModel):
+    instances: int
+    day: int
+    week: int
+    total: int
+
+
 class ProjectOut(BaseModel):
     uuid: str
     project_id: str
     name: str
+    stats: ProjectStats | None = None
 
 
 class ProjectQueryResponse(BaseModel):

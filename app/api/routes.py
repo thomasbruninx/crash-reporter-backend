@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from uuid import uuid4
 
@@ -6,6 +6,7 @@ from beanie.odm.operators.find.comparison import In
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select, or_, func
 from sqlalchemy.orm import Session
+from pymongo import ASCENDING, DESCENDING
 
 from app.core.security import (
     ALL_SCOPES,
@@ -35,6 +36,63 @@ from app.schemas.user import UserCreate, UserOut
 
 
 router = APIRouter()
+
+PROJECT_SORT_FIELDS = {"name", "project_id", "instances", "day", "week", "total"}
+INSTANCE_SORT_FIELDS = {"uuid", "notes"}
+REPORT_SORT_FIELDS = {"timestamp", "severity", "instance_uuid"}
+
+
+def validate_sort(sort_by: str | None, allowed: set[str]):
+    if sort_by and sort_by not in allowed:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported sort_by '{sort_by}'. Allowed: {', '.join(sorted(allowed))}",
+        )
+
+
+def sql_sort_dir(sort_dir: str) -> bool:
+    return sort_dir == "desc"
+
+
+async def project_stats_map(db: Session, project_uuids: list[str]) -> dict[str, dict[str, int]]:
+    if not project_uuids:
+        return {}
+
+    stats: dict[str, dict[str, int]] = {
+        uuid: {"instances": 0, "day": 0, "week": 0, "total": 0} for uuid in project_uuids
+    }
+    instance_rows = db.execute(
+        select(Instance.project_uuid, func.count(Instance.uuid))
+        .where(Instance.project_uuid.in_(project_uuids))
+        .group_by(Instance.project_uuid)
+    ).all()
+    for project_uuid, count in instance_rows:
+        stats[project_uuid]["instances"] = int(count)
+
+    now = datetime.now(tz=timezone.utc)
+    day_cutoff = now - timedelta(days=1)
+    week_cutoff = now - timedelta(days=7)
+    collection = ReportDocument.get_motor_collection()
+    pipeline = [
+        {"$match": {"project_uuid": {"$in": project_uuids}}},
+        {
+            "$group": {
+                "_id": "$project_uuid",
+                "total": {"$sum": 1},
+                "day": {"$sum": {"$cond": [{"$gte": ["$timestamp", day_cutoff]}, 1, 0]}},
+                "week": {"$sum": {"$cond": [{"$gte": ["$timestamp", week_cutoff]}, 1, 0]}},
+            }
+        },
+    ]
+    report_rows = await collection.aggregate(pipeline).to_list(length=None)
+    for row in report_rows:
+        project_uuid = row["_id"]
+        if project_uuid not in stats:
+            continue
+        stats[project_uuid]["total"] = int(row.get("total", 0))
+        stats[project_uuid]["day"] = int(row.get("day", 0))
+        stats[project_uuid]["week"] = int(row.get("week", 0))
+    return stats
 
 
 def paginate(items: list, page: int, resultsperpage: int):
@@ -80,15 +138,24 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db), _: dic
 
 
 @router.get("/project/query", response_model=ProjectQueryResponse)
-def query_projects(
+async def query_projects(
     db: Session = Depends(get_db),
     uuids: Annotated[list[str] | None, Query()] = None,
     project_ids: Annotated[list[str] | None, Query()] = None,
     name: str | None = None,
     page: int = 0,
     resultsperpage: int = 25,
+    include_stats: bool = False,
+    sort_by: str | None = None,
+    sort_dir: str = "asc",
     _: dict = Depends(require_scope("project.read")),
 ):
+    validate_sort(sort_by, PROJECT_SORT_FIELDS)
+    if sort_dir not in {"asc", "desc"}:
+        raise HTTPException(status_code=422, detail="sort_dir must be 'asc' or 'desc'")
+    if sort_by in {"instances", "day", "week", "total"} and not include_stats:
+        raise HTTPException(status_code=422, detail="sort_by on stats fields requires include_stats=true")
+
     stmt = select(Project)
     if uuids:
         stmt = stmt.where(Project.uuid.in_(uuids))
@@ -96,10 +163,34 @@ def query_projects(
         stmt = stmt.where(Project.project_id.in_(project_ids))
     if name:
         stmt = stmt.where(Project.name.ilike(f"%{name}%"))
+    if not include_stats and sort_by in {"name", "project_id"}:
+        column = Project.name if sort_by == "name" else Project.project_id
+        stmt = stmt.order_by(column.desc() if sql_sort_dir(sort_dir) else column.asc())
+
     rows = db.execute(stmt).scalars().all()
+    stats_map = await project_stats_map(db, [row.uuid for row in rows]) if include_stats else {}
+
+    if include_stats and sort_by:
+        reverse = sort_dir == "desc"
+        if sort_by in {"name", "project_id"}:
+            rows.sort(
+                key=lambda r: getattr(r, sort_by).lower() if isinstance(getattr(r, sort_by), str) else getattr(r, sort_by),
+                reverse=reverse,
+            )
+        else:
+            rows.sort(key=lambda r: stats_map.get(r.uuid, {}).get(sort_by, 0), reverse=reverse)
+
     paged, total = paginate(rows, page, resultsperpage)
     return ProjectQueryResponse(
-        items=[ProjectOut(uuid=i.uuid, project_id=i.project_id, name=i.name) for i in paged],
+        items=[
+            ProjectOut(
+                uuid=i.uuid,
+                project_id=i.project_id,
+                name=i.name,
+                stats=stats_map.get(i.uuid) if include_stats else None,
+            )
+            for i in paged
+        ],
         total=total,
         page=page,
         resultsperpage=resultsperpage,
@@ -165,8 +256,14 @@ def query_instances(
     project_ids: Annotated[list[str] | None, Query()] = None,
     page: int = 0,
     resultsperpage: int = 25,
+    sort_by: str | None = None,
+    sort_dir: str = "asc",
     _: dict = Depends(require_scope("instance.read")),
 ):
+    validate_sort(sort_by, INSTANCE_SORT_FIELDS)
+    if sort_dir not in {"asc", "desc"}:
+        raise HTTPException(status_code=422, detail="sort_dir must be 'asc' or 'desc'")
+
     stmt = select(Instance)
     if uuids:
         stmt = stmt.where(Instance.uuid.in_(uuids))
@@ -182,6 +279,10 @@ def query_instances(
         if not p_uuids:
             return InstanceQueryResponse(items=[], total=0, page=page, resultsperpage=resultsperpage)
         stmt = stmt.where(Instance.project_uuid.in_(p_uuids))
+
+    if sort_by:
+        column = Instance.uuid if sort_by == "uuid" else Instance.notes
+        stmt = stmt.order_by(column.desc() if sql_sort_dir(sort_dir) else column.asc())
 
     rows = db.execute(stmt).scalars().all()
     paged, total = paginate(rows, page, resultsperpage)
@@ -270,8 +371,14 @@ async def query_reports(
     severity: Annotated[list[str] | None, Query()] = None,
     page: int = 0,
     resultsperpage: int = 25,
+    sort_by: str | None = None,
+    sort_dir: str = "asc",
     _: dict = Depends(require_scope("report.read")),
 ):
+    validate_sort(sort_by, REPORT_SORT_FIELDS)
+    if sort_dir not in {"asc", "desc"}:
+        raise HTTPException(status_code=422, detail="sort_dir must be 'asc' or 'desc'")
+
     filters = []
     if uuids:
         filters.append(In(ReportDocument.uuid, uuids))
@@ -295,6 +402,9 @@ async def query_reports(
         filters.append(In(ReportDocument.project_uuid, list(p_uuids)))
 
     cursor = ReportDocument.find(*filters) if filters else ReportDocument.find_all()
+    if sort_by:
+        mongo_dir = DESCENDING if sort_dir == "desc" else ASCENDING
+        cursor = cursor.sort([(sort_by, mongo_dir)])
     total = await cursor.count()
     if resultsperpage != 0:
         cursor = cursor.skip(page * resultsperpage).limit(resultsperpage)
