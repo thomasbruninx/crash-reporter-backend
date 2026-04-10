@@ -84,7 +84,7 @@ async def project_stats_map(db: Session, project_uuids: list[str]) -> dict[str, 
             }
         },
     ]
-    report_rows = await collection.aggregate(pipeline).to_list(length=None)
+    report_rows = await collection.aggregate(pipeline).to_list(None)
     for row in report_rows:
         project_uuid = row["_id"]
         if project_uuid not in stats:
@@ -404,7 +404,7 @@ async def query_reports(
     cursor = ReportDocument.find(*filters) if filters else ReportDocument.find_all()
     if sort_by:
         mongo_dir = DESCENDING if sort_dir == "desc" else ASCENDING
-        cursor = cursor.sort([(sort_by, mongo_dir)])
+        cursor = cursor.sort((sort_by, mongo_dir))
     total = await cursor.count()
     if resultsperpage != 0:
         cursor = cursor.skip(page * resultsperpage).limit(resultsperpage)
