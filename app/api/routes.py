@@ -72,7 +72,12 @@ async def project_stats_map(db: Session, project_uuids: list[str]) -> dict[str, 
     now = datetime.now(tz=timezone.utc)
     day_cutoff = now - timedelta(days=1)
     week_cutoff = now - timedelta(days=7)
-    collection = ReportDocument.get_motor_collection()
+    if hasattr(ReportDocument, "get_pymongo_collection"):
+        collection = ReportDocument.get_pymongo_collection()
+    elif hasattr(ReportDocument, "get_motor_collection"):
+        collection = ReportDocument.get_motor_collection()
+    else:
+        raise RuntimeError("ReportDocument collection accessor is unavailable")
     pipeline = [
         {"$match": {"project_uuid": {"$in": project_uuids}}},
         {
