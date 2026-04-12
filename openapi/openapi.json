@@ -213,6 +213,42 @@
               "default": 25,
               "title": "Resultsperpage"
             }
+          },
+          {
+            "name": "include_stats",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Stats"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sort By"
+            }
+          },
+          {
+            "name": "sort_dir",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "asc",
+              "title": "Sort Dir"
+            }
           }
         ],
         "responses": {
@@ -550,6 +586,32 @@
               "type": "integer",
               "default": 25,
               "title": "Resultsperpage"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sort By"
+            }
+          },
+          {
+            "name": "sort_dir",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "asc",
+              "title": "Sort Dir"
             }
           }
         ],
@@ -948,6 +1010,32 @@
               "default": 25,
               "title": "Resultsperpage"
             }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sort By"
+            }
+          },
+          {
+            "name": "sort_dir",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "asc",
+              "title": "Sort Dir"
+            }
           }
         ],
         "responses": {
@@ -1337,6 +1425,16 @@
           "name": {
             "type": "string",
             "title": "Name"
+          },
+          "stats": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectStats"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1377,6 +1475,34 @@
           "resultsperpage"
         ],
         "title": "ProjectQueryResponse"
+      },
+      "ProjectStats": {
+        "properties": {
+          "instances": {
+            "type": "integer",
+            "title": "Instances"
+          },
+          "day": {
+            "type": "integer",
+            "title": "Day"
+          },
+          "week": {
+            "type": "integer",
+            "title": "Week"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "instances",
+          "day",
+          "week",
+          "total"
+        ],
+        "title": "ProjectStats"
       },
       "ProjectUpdate": {
         "properties": {
